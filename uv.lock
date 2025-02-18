@@ -10,7 +10,6 @@ resolution-markers = [
 
 [[package]]
 name = "ampal"
-version = "1.5.4"
 source = { editable = "." }
 dependencies = [
     { name = "cython" },

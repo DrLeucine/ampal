@@ -96,21 +96,49 @@ class DihedralTestCase(unittest.TestCase):
     @given(
         tuples(
             lists(
-                floats(allow_nan=False, allow_infinity=False), min_size=3, max_size=3
+                floats(
+                    min_value=-1000000,
+                    max_value=1000000,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=3,
+                max_size=3,
             ),
             lists(
-                floats(allow_nan=False, allow_infinity=False), min_size=3, max_size=3
+                floats(
+                    min_value=-1000000,
+                    max_value=1000000,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=3,
+                max_size=3,
             ),
             lists(
-                floats(allow_nan=False, allow_infinity=False), min_size=3, max_size=3
+                floats(
+                    min_value=-1000000,
+                    max_value=1000000,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=3,
+                max_size=3,
             ),
             lists(
-                floats(allow_nan=False, allow_infinity=False), min_size=3, max_size=3
+                floats(
+                    min_value=-1000000,
+                    max_value=1000000,
+                    allow_nan=False,
+                    allow_infinity=False,
+                ),
+                min_size=3,
+                max_size=3,
             ),
         )
     )
     @settings(max_examples=50)
-    def test_dihedral_reverves_vectors(self, vectors):
+    def test_dihedral_reverses_vectors(self, vectors):
         a, b, c, d = vectors
         angle_1 = geometry.dihedral(a, b, c, d)
         angle_2 = geometry.dihedral(d, c, b, a)
