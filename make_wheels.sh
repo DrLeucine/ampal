@@ -31,6 +31,11 @@ cleanup_build
 
 # Compile wheels
 for PYBIN in /opt/python/*/bin; do
+    # Skip the cp36-cp36m version
+    if [[ "$PYBIN" == *"cp36-cp36m"* ]]; then
+        echo "Skipping $PYBIN"
+        continue
+    fi
     # Skip the cp313-cp313t version
     if [[ "$PYBIN" == *"cp313-cp313t"* ]]; then
         echo "Skipping $PYBIN"
@@ -38,7 +43,7 @@ for PYBIN in /opt/python/*/bin; do
     fi
 
     cleanup_build
-    # "${PYBIN}/pip" install -r /io/dev-requirements.txt
+    "${PYBIN}/pip" install setuptools cython networkx numpy hypothesis pytest
     "${PYBIN}/pip" wheel /io/ --no-deps -w wheelhouse/
 done
 cleanup_build
@@ -50,6 +55,11 @@ done
 
 # Install packages and test
 for PYBIN in /opt/python/*/bin/; do
+    # Skip the cp36-cp36m version
+    if [[ "$PYBIN" == *"cp36-cp36m"* ]]; then
+        echo "Skipping $PYBIN"
+        continue
+    fi
     # Skip the cp313-cp313t version
     if [[ "$PYBIN" == *"cp313-cp313t"* ]]; then
         echo "Skipping $PYBIN"
@@ -59,6 +69,8 @@ for PYBIN in /opt/python/*/bin/; do
     "${PYBIN}/pip" install ampal --no-index -f /io/wheelhouse
     "${PYBIN}/pytest" /io/tests
 done
+
+rm /io/wheelhouse/*-linux_x86_64.whl
 
 # Create source distribution using Python 3.12
 PYBIN="/opt/python/cp312-cp312/bin" 
