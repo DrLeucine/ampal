@@ -3,7 +3,7 @@ set -e -u -x
 
 function cleanup_build {
     # Remove build directories and artifacts
-    rm -rf build src/*.egg-info
+    rm -rf build src/*.egg-info src/ampal.egg-info
 
     # Remove Cython-generated C files
     find -name "src/*.c" -delete
@@ -43,7 +43,7 @@ for PYBIN in /opt/python/*/bin; do
     fi
 
     cleanup_build
-    "${PYBIN}/pip" install setuptools cython networkx numpy hypothesis pytest
+    "${PYBIN}/pip" install setuptools setuptools-scm cython networkx numpy hypothesis pytest
     "${PYBIN}/pip" wheel /io/ --no-deps -w wheelhouse/
 done
 cleanup_build
@@ -75,3 +75,4 @@ rm /io/wheelhouse/*-linux_x86_64.whl
 # Create source distribution using Python 3.12
 PYBIN="/opt/python/cp312-cp312/bin" 
 "${PYBIN}/python" setup.py sdist -d /io/wheelhouse/
+cleanup_build

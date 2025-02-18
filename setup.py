@@ -5,12 +5,6 @@ from setuptools.extension import Extension
 from Cython.Build import cythonize
 
 
-def readme():
-    """Loads the readme file for AMPAL."""
-    with open("README.md", "r") as inf:
-        return inf.read()
-
-
 setup(
     packages=find_packages("src"),
     package_dir={"": "src"},
