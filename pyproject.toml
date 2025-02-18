@@ -18,7 +18,6 @@ dependencies = [
     "cython",
     "networkx",
     "numpy",
-    "requests",
 ]
 
 [project.urls]
