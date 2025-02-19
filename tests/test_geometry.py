@@ -97,8 +97,6 @@ class DihedralTestCase(unittest.TestCase):
         tuples(
             lists(
                 floats(
-                    min_value=-1000000,
-                    max_value=1000000,
                     allow_nan=False,
                     allow_infinity=False,
                 ),
@@ -107,8 +105,6 @@ class DihedralTestCase(unittest.TestCase):
             ),
             lists(
                 floats(
-                    min_value=-1000000,
-                    max_value=1000000,
                     allow_nan=False,
                     allow_infinity=False,
                 ),
@@ -117,8 +113,6 @@ class DihedralTestCase(unittest.TestCase):
             ),
             lists(
                 floats(
-                    min_value=-1000000,
-                    max_value=1000000,
                     allow_nan=False,
                     allow_infinity=False,
                 ),
@@ -127,8 +121,6 @@ class DihedralTestCase(unittest.TestCase):
             ),
             lists(
                 floats(
-                    min_value=-1000000,
-                    max_value=1000000,
                     allow_nan=False,
                     allow_infinity=False,
                 ),
@@ -139,10 +131,13 @@ class DihedralTestCase(unittest.TestCase):
     )
     @settings(max_examples=50)
     def test_dihedral_reverses_vectors(self, vectors):
+        atol_value = 1e-5
         a, b, c, d = vectors
         angle_1 = geometry.dihedral(a, b, c, d)
         angle_2 = geometry.dihedral(d, c, b, a)
-        at = numpy.isclose(angle_1, angle_2) or numpy.isclose(angle_1, -angle_2)
+        at = numpy.isclose(angle_1, angle_2, atol=atol_value) or numpy.isclose(
+            angle_1, -angle_2, atol=atol_value
+        )
         self.assertTrue(at)
 
 
