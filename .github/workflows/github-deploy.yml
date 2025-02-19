@@ -17,8 +17,7 @@ jobs:
     strategy:
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        # os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
-        os: [macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,23 +64,23 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # Extract the tag name and check it.  This is MUCH more robust.
+      # Extract the tag name and check it.
       - name: Get tag name
         id: get_tag
         run: |
           TAG_NAME=$(echo ${{ github.ref }} | sed 's#refs/tags/##')
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Check tag format (Example - adjust regex as needed)
+      - name: Check tag format.
         if: ${{ steps.get_tag.outputs.tag_name != '' }}
         run: |
-          if [[ ! ${{ steps.get_tag.outputs.tag_name }} =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?(\+[a-zA-Z0-9]+)?$ ]]; then
+          if [[ ! ${{ steps.get_tag.outputs.tag_name }} =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+|rc[0-9]+)?(\+[a-zA-Z0-9]+)?$ ]]; then
             echo "Invalid tag format: ${{ steps.get_tag.outputs.tag_name }}"
             exit 1
           fi
           echo "Tag format is valid."
 
-      - name: Publish to TestPyPI
+      - name: Publish to PyPI
         if: ${{ steps.get_tag.outputs.tag_name != '' }} # Ensure tag was extracted
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
