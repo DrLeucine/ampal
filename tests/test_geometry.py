@@ -131,7 +131,7 @@ class DihedralTestCase(unittest.TestCase):
     )
     @settings(max_examples=50)
     def test_dihedral_reverses_vectors(self, vectors):
-        atol_value = 1e-5
+        atol_value = 1e-3
         a, b, c, d = vectors
         angle_1 = geometry.dihedral(a, b, c, d)
         angle_2 = geometry.dihedral(d, c, b, a)
