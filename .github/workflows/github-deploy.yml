@@ -17,8 +17,7 @@ jobs:
     strategy:
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        # os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
-        os: [macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-13, macos-14]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -84,5 +83,3 @@ jobs:
       - name: Publish to PyPI
         if: ${{ steps.get_tag.outputs.tag_name != '' }} # Ensure tag was extracted
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
