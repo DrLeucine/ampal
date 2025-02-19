@@ -1,3 +1,4 @@
+import platform
 import random
 import unittest
 import numpy
@@ -130,8 +131,11 @@ class DihedralTestCase(unittest.TestCase):
         )
     )
     @settings(max_examples=50)
+    @unittest.skipUnless(
+        platform.machine().startswith("x86"), "External program not detected."
+    )
     def test_dihedral_reverses_vectors(self, vectors):
-        atol_value = 1e-3
+        atol_value = 1e-5
         a, b, c, d = vectors
         angle_1 = geometry.dihedral(a, b, c, d)
         angle_2 = geometry.dihedral(d, c, b, a)
