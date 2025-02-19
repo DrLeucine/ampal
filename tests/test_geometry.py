@@ -131,9 +131,7 @@ class DihedralTestCase(unittest.TestCase):
         )
     )
     @settings(max_examples=50)
-    @unittest.skipUnless(
-        platform.machine().startswith("x86"), "External program not detected."
-    )
+    @unittest.skipUnless(platform.machine().startswith("x86"), "Unstable test on ARM.")
     def test_dihedral_reverses_vectors(self, vectors):
         atol_value = 1e-5
         a, b, c, d = vectors
