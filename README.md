@@ -3,7 +3,7 @@ A simple, intuitive and Pythonic framework for representing biomolecular structu
 
 ## Installation
 
-AMPAL is currently tested with version of Python above 3.8, although it should
+AMPAL is currently tested with version of Python above 3.7, although it should
 still work with earlier versions. You can install AMPAL from pip:
 
 `pip install ampal`
@@ -50,6 +50,14 @@ complex selections and performing analysis. Take a look at the
 [docs](https://isambard-uob.github.io/ampal/) to find out more.
 
 ## Release Notes
+
+## v2.0.0
+* Breaking change: removes `find_aa_info` function and tests, which enables us to
+  remove the requests dependency. This kind of functionality is better handled by the
+  user, as there is a security concern regarding making HTTP requests without the user
+  explicitly opting in.
+* Updates project to use modern structure, enabling easier installation on all platforms.
+* Automated builds and uploads to PyPI on new version updates.
 
 ## v1.5.3
 * Fixes bug with `get_slice_from_res_id` to enable non-continuous sequences to
