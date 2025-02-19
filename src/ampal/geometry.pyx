@@ -392,55 +392,6 @@ def radius_of_circumcircle(a, b, c):
 
     return radius
 
-# TODO Remove this function and its tests when find_and_fit_loops no longer uses it.
-def rotation_matrix(angle, unit_vect, point=None):
-    """Find rotation matrix for rotating about unit_vect by angle.
-
-    Notes
-    -----
-    See https://en.wikipedia.org/wiki/Rotation_matrix for more information.
-    In particular, the section headed 'Rotation matrix from axis and angle'.
-
-    Parameters
-    ----------
-    angle : float
-        Angle about which to rotate.
-    unit_vect : list or tuple or numpy.array
-        Vector about which to rotate.
-    point : list or tuple or numpy.array, optional.
-        Specify a point about which to rotate.
-        If point is None, then the rotation will be about the origin.
-        Default value is None.
-
-    Returns
-    -------
-    m : numpy.array
-        A (4 x 4) rotation matrix.
-    """
-    cdef double sina, cosa
-    # TODO Confirm whether we want the input angle to be in degrees or radians. Change unit vector to internally do this.
-    sina = sin(angle)
-    cosa = cos(angle)
-    # TODO use the unit_vector function here so that the function can take a vector of arbitrary length.
-    direction = numpy.array([float(x) for x in unit_vect])
-
-    # rotation matrix around unit vector
-    r = numpy.diag([cosa, cosa, cosa])
-    r += numpy.outer(direction, direction) * (1.0 - cosa)
-
-    # cross product matrix of the unit_vector multiplied by sina
-    direction *= sina
-    r += numpy.array([[0.0, -direction[2], direction[1]],
-                      [direction[2], 0.0, -direction[0]],
-                      [-direction[1], direction[0], 0.0]])
-    m = numpy.identity(4)
-    m[:3, :3] = r
-    if point is not None:
-        # rotation not around origin
-        point = numpy.array(point[:3], dtype=numpy.float64, copy=False)
-        m[:3, 3] = point - numpy.dot(r, point)
-    return m
-
 
 def apply_unit_quaternion(vector, u_in, double s):
     """Applies the rotation defined by the unit quaternion to a 3D vector.
