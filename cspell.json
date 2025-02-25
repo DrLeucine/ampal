@@ -1,0 +1,30 @@
+{
+  "language": "en-GB",
+  "words": [
+    "bson",
+    "conn",
+    "color",
+    "chrono",
+    "datetime",
+    "datelike",
+    "dotenv",
+    "dotenvy",
+    "dont",
+    "elem",
+    "jsonwebtoken",
+    "ampal",
+    "polynucleotide",
+    "rowid",
+    "strftime",
+    "sqlx",
+    "tagline",
+    "unixepoch",
+    "venv",
+    "websockets",
+    "proc",
+    "ENDMDL",
+    "HETATM",
+    "hetatom",
+    "bfactor"
+  ]
+}

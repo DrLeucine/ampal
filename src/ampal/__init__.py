@@ -10,5 +10,6 @@ from .nucleic_acid import Polynucleotide, Nucleotide
 from .ligands import Ligand, LigandGroup
 from .assembly import Assembly, AmpalContainer
 from .pdb_parser import load_pdb
+from .mmcif_parser import load_mmcif_file
 from .pseudo_atoms import PseudoGroup, PseudoMonomer, PseudoAtom, Primitive
 from .dssp import tag_dssp_data
