@@ -25,6 +25,10 @@
     "ENDMDL",
     "HETATM",
     "hetatom",
+    "pdbx",
+    "asym",
+    "Cartn",
+    "mmcif",
     "bfactor"
   ]
 }

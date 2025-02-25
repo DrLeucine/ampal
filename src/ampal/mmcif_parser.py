@@ -1,33 +1,109 @@
 """Contains code for parsing mmCIF files."""
 
-from collections import OrderedDict
-import itertools
-from typing import Tuple, List, Dict
 import gzip
 import pathlib
+from typing import Dict, List, Tuple, TextIO, Set, TypedDict
+import warnings
 
-from .base_ampal import Atom, Monomer
-from .assembly import AmpalContainer, Assembly
-from .protein import Polypeptide, Residue
-from .nucleic_acid import Polynucleotide, Nucleotide
-from .ligands import Ligand, LigandGroup
-from .amino_acids import standard_amino_acids
-from .data import PDB_ATOM_COLUMNS
+from ampal.base_ampal import Atom
+from ampal.assembly import AmpalContainer, Assembly
+from ampal.protein import Polypeptide, Residue
+from ampal.nucleic_acid import Polynucleotide, Nucleotide
+from ampal.ligands import Ligand, LigandGroup
+from ampal.amino_acids import standard_amino_acids
+
+# Type aliases for improved readability and maintainability
+ChainDict = Dict[Tuple[str, str], Dict[Tuple[str, str], Atom]]
+ChainComposition = Set[str]  # Contains 'P', 'N', or 'H'
+StateDict = Dict[str, Tuple[ChainDict, ChainComposition]]
+StatesDict = Dict[str, StateDict]
 
 
-def load_mmcif_file(
-    file_path: pathlib.Path, is_gzipped: bool = False
-) -> AmpalContainer:
-    if is_gzipped:
-        file = gzip.open(file_path)
-    else:
-        file = open(file_path, "r")
+# TypedDict for atom data structure, enhancing type safety
+class AtomData(TypedDict):
+    """
+    Represents the nested structure of atom data extracted from an mmCIF file.
 
+    Attributes
+    ----------
+    model_number : str
+        Model number in which chain is present
+    chain_id : str
+        A dictionary representing a chain, containing residues and chain type.
+        The keys are chain identifiers (typically single letters).  The values
+        are tuples. The first element of the tuple is a dictionary of Residues
+        keyed by residue ID. The second element is a set representing the
+        chain composition (containing 'P' for protein, 'N' for nucleic acid,
+        'H' for hetero).
+    res_seq_id : str
+        Unique identifier for residues that contains the residue number and the insertion code
+    residue : str
+        A dictionary containing all atoms for a single Residue.
+        The keys are tuples: (residue name, atom label). The values are Atom
+        objects.
+    """
+
+    model_number: str
+    chain_id: str
+    res_seq_id: Tuple[str, str]
+    residue: Dict[Tuple[str, str], Atom]
+
+
+def _open_mmcif_file(file_path: pathlib.Path, is_gzipped: bool = False) -> TextIO:
+    """Opens an mmCIF file, handling gzipped files if necessary.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the mmCIF file.
+    is_gzipped : bool, optional
+        Whether the file is gzipped, by default False.
+
+    Returns
+    -------
+    TextIO
+        File object.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    """
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    try:
+        if is_gzipped:
+            return gzip.open(file_path, "rt")  # Open in text mode
+        else:
+            return open(file_path, "r")
+    except OSError as e:
+        raise OSError(f"Error opening file {file_path}: {e}") from e
+    except Exception as e:
+        raise Exception(
+            f"An unexpected error occurred while opening {file_path}: {e}"
+        ) from e
+
+
+def _parse_atom_site_records(file: TextIO) -> Tuple[List[str], List[str]]:
+    """Parses the _atom_site records in an mmCIF file.
+
+    Parameters
+    ----------
+    file : TextIO
+        File object of the mmCIF file.
+
+    Returns
+    -------
+    Tuple[List[str], List[str]]
+        A tuple containing:
+            - List of column labels.
+            - List of atom lines.
+    """
     parsing = False
-    column_labels = []
-    atom_lines = []
-    for in_line in file.readlines():
-        line = str(in_line)
+    column_labels: List[str] = []
+    atom_lines: List[str] = []
+    for line in file:
+        line = str(line)
         if not parsing:
             if line.startswith("_atom_site."):
                 parsing = True
@@ -36,120 +112,221 @@ def load_mmcif_file(
             if line.startswith("_atom_site."):
                 column_labels.append(line.split(".")[1].strip())
             elif line.startswith("#"):
-                parsing = False
-            else:
-                atom_lines.append(line)
+                parsing = False  # Stop parsing at the end of the block
+            elif (
+                line.strip()
+            ):  # Only add non-empty lines, avoids issues with whitespace
+                atom_lines.append(line.strip())
+    return column_labels, atom_lines
 
-    # at_type = line[0:6].strip()  # 0
-    # at_ser = int(line[6:11].strip())  # 1
-    # at_name = line[12:16].strip()  # 2
-    # alt_loc = line[16].strip()  # 3
-    # res_name = line[17:20].strip()  # 4
-    # chain_id = line[21].strip()  # 5
-    # res_seq = int(line[22:26].strip())  # 6
-    # i_code = line[26].strip()  # 7
-    # x = float(line[30:38].strip())  # 8
-    # y = float(line[38:46].strip())  # 9
-    # z = float(line[46:54].strip())  # 10
-    # occupancy = float(line[54:60].strip())  # 11
-    # _temp_factor = line[60:66].strip()
-    # if _temp_factor:
-    #     temp_factor = float(_temp_factor)
-    # else:
-    #     temp_factor = 0.0
-    # element = line[76:78].strip()  # 13
-    # charge = line[78:80].strip()  # 14
-    states = {}
 
-    record_type_index = column_labels.index("group_PDB")
-    at_ser_index = column_labels.index("id")
-    at_name_index = column_labels.index("label_atom_id")
-    alt_loc_index = column_labels.index("label_alt_id")
-    res_name_index = column_labels.index("label_comp_id")
-    chain_id_index = column_labels.index("label_asym_id")
-    res_seq_id_index = column_labels.index("auth_seq_id")
-    i_code_index = column_labels.index("pdbx_PDB_ins_code")
-    x_index = column_labels.index("Cartn_x")
-    y_index = column_labels.index("Cartn_y")
-    z_index = column_labels.index("Cartn_z")
-    occupancy_index = column_labels.index("occupancy")
-    bfactor_index = column_labels.index("B_iso_or_equiv")
-    element_index = column_labels.index("type_symbol")
-    charge_index = column_labels.index("pdbx_formal_charge")
-    model_number_index = column_labels.index("pdbx_PDB_model_num")
+def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> StatesDict:
+    """Extracts atom data from atom lines and organizes it by model, chain, and residue.
 
+    Parameters
+    ----------
+    atom_lines : List[str]
+        List of atom lines.
+    column_labels : List[str]
+        List of column labels.
+
+    Returns
+    -------
+    StatesDict
+        A dictionary representing the structure:
+        {model_number: {chain_id: ({ (res_seq_id, i_code): { (res_name, res_label): Atom } }, chain_composition)}}.  The chain composition is a set containing P, N or H.
+    """
+    # Use a try-except block to handle potential errors during index lookup
+    try:
+        indices = {
+            label: column_labels.index(label)
+            for label in [
+                "group_PDB",
+                "id",
+                "label_atom_id",
+                "label_alt_id",
+                "label_comp_id",
+                "label_asym_id",
+                "auth_seq_id",
+                "pdbx_PDB_ins_code",
+                "Cartn_x",
+                "Cartn_y",
+                "Cartn_z",
+                "occupancy",
+                "B_iso_or_equiv",
+                "type_symbol",
+                "pdbx_formal_charge",
+                "pdbx_PDB_model_num",
+            ]
+        }
+    except ValueError as e:
+        raise ValueError(f"Required column label not found in mmCIF file: {e}") from e
+
+    states: StatesDict = {}
     for atom_line in atom_lines:
-        atom_columns = atom_line.strip().split(" ")
-        record_type = atom_columns[record_type_index]
-        model_number = atom_columns[model_number_index]
+        # Use .split() without arguments to handle variable whitespace
+        atom_columns = atom_line.split()
+        # Remove quotes if present, handle missing columns robustly
+        atom_columns = [col.replace('"', "").replace("'", "") for col in atom_columns]
+
+        # Helper function to get values with default handling
+        def get_value(key, default=""):
+            try:
+                return atom_columns[indices[key]]
+            except (IndexError, KeyError):
+                return default
+
+        record_type = get_value("group_PDB")
+        model_number = get_value("pdbx_PDB_model_num")
+
         if model_number not in states:
             states[model_number] = {}
         state = states[model_number]
 
-        chain_id = atom_columns[chain_id_index]
+        chain_id = get_value("label_asym_id")
         if chain_id not in state:
             state[chain_id] = ({}, set())
-        (chain, chain_composition) = state[chain_id]
+        chain, chain_composition = state[chain_id]
 
-        res_seq_id = atom_columns[res_seq_id_index]
-        i_code = atom_columns[i_code_index]
+        res_seq_id = get_value("auth_seq_id")
+        i_code = get_value("pdbx_PDB_ins_code")
+        # Handle cases where i_code might be "?" or "." and should be treated as empty
+        i_code = "" if i_code in ["?", "."] else i_code
         full_res_id = (res_seq_id, i_code)
         if full_res_id not in chain:
             chain[full_res_id] = {}
         residue = chain[full_res_id]
 
-        res_name = atom_columns[res_name_index]
-        res_label = atom_columns[at_name_index]
-        atom_coordinate = (
-            float(atom_columns[x_index]),
-            float(atom_columns[y_index]),
-            float(atom_columns[z_index]),
-        )
-        atom = Atom(
-            atom_coordinate,
-            element=atom_columns[element_index],
-            atom_id=atom_columns[at_ser_index],
-            res_label=res_label,
-            occupancy=atom_columns[occupancy_index],
-            bfactor=float(atom_columns[bfactor_index]),
-            charge=atom_columns[charge_index],
-            state=atom_columns[i_code_index],
-            parent=None,
-        )
-        assert (
-            res_name,
-            res_label,
-        ) not in residue, "Atom label is not unique, going to overwrite!"
+        res_name = get_value("label_comp_id")
+        res_label = get_value("label_atom_id")
+
+        # Handle coordinate extraction with error checking
+        try:
+            atom_coordinate = (
+                float(get_value("Cartn_x")),
+                float(get_value("Cartn_y")),
+                float(get_value("Cartn_z")),
+            )
+        except (ValueError, KeyError):
+            warnings.warn(
+                f"Invalid or missing coordinates for atom {res_label} in residue {res_seq_id}{i_code}, chain {chain_id}.  Skipping atom."
+            )
+            continue  # Skip this atom
+
+        # Handle potential errors with charge and occupancy (e.g., if they are '?')
+        charge = get_value("pdbx_formal_charge")
+        charge = "" if charge in ["?", "."] else charge
+        try:
+            occupancy = float(get_value("occupancy", "1.0"))  # Default occupancy to 1.0
+        except (ValueError, KeyError):
+            occupancy = 1.0  # Default occupancy
+
+        try:
+            bfactor = float(get_value("B_iso_or_equiv"))
+        except (ValueError, KeyError):
+            warnings.warn(
+                f"Invalid or missing B-factor for atom {res_label} in residue {res_seq_id}{i_code}, chain {chain_id}.  Setting to 0.0."
+            )
+            bfactor = 0.0
+
+        try:
+            atom = Atom(
+                atom_coordinate,
+                element=get_value("type_symbol"),
+                atom_id=get_value("id"),
+                res_label=res_label,
+                occupancy=occupancy,
+                bfactor=bfactor,
+                charge=charge,
+                state="",  # alt_loc is not currently used
+                parent=None,
+            )
+        except ValueError as e:
+            warnings.warn(
+                f"Error creating Atom object for {res_label} in residue {res_seq_id}{i_code}, chain {chain_id}: {e}.  Skipping atom."
+            )
+            continue
+
+        if (res_name, res_label) in residue:
+            warnings.warn(
+                f"Atom label {(res_name, res_label)} is not unique, overwriting!"
+            )
 
         residue[(res_name, res_label)] = atom
         if record_type == "ATOM":
             if res_name in standard_amino_acids.values():
                 chain_composition.add("P")
-            else:
+            # More robust nucleic acid check
+            elif res_name in [
+                "A",
+                "C",
+                "G",
+                "T",
+                "U",
+                "DA",
+                "DC",
+                "DG",
+                "DT",
+                "DU",
+                "DI",
+            ]:
                 chain_composition.add("N")
+            else:
+                chain_composition.add("H")  # Assuming HETATM if not standard AA
+        elif record_type == "HETATM":
+            chain_composition.add("H")
         else:
+            # treat unknown record type as hetero atom
             chain_composition.add("H")
 
+    return states
+
+
+def _create_ampal_structure(
+    states: StatesDict, file_path: pathlib.Path
+) -> AmpalContainer:
+    """Creates an AmpalContainer structure from the extracted atom data.
+
+    Parameters
+    ----------
+    states : StatesDict
+        Dictionary containing atom data, as returned by _extract_atom_data.
+    file_path : pathlib.Path
+        Path of the file, to extract the name of the file to save as the name of the assembly.
+
+    Returns
+    -------
+    AmpalContainer
+        An AmpalContainer object representing the structure.
+    """
     ampal_container = AmpalContainer(id=str(file_path.stem))
     for state_id, state in states.items():
         assembly = Assembly(assembly_id=state_id)
         for chain_id, (chain, chain_composition) in state.items():
             if "P" in chain_composition:
                 polymer = Polypeptide(polymer_id=chain_id, parent=assembly)
-                polymer.ligands = LigandGroup()
+                polymer.ligands = LigandGroup()  # Initialize LigandGroup
             elif "N" in chain_composition:
                 polymer = Polynucleotide(polymer_id=chain_id, parent=assembly)
                 polymer.ligands = LigandGroup()
-            else:
-                polymer = LigandGroup(polymer_id=chain_id, parent=assembly)
+            # Handle case with only hetero atoms: treat as a single LigandGroup
+            else:  # "H" in chain_composition or empty
+                polymer = LigandGroup(polymer_id=chain_id, parent=assembly)  # type: ignore
+
             for (res_seq_id, i_code), residue in chain.items():
                 residue_labels = list({x[0] for x in residue.keys()})
-                assert (
-                    len(residue_labels) == 1
-                ), "A single residue has has multiple residue labels"
+                if len(residue_labels) != 1:
+                    warnings.warn(
+                        f"Residue {res_seq_id}{i_code} has multiple residue labels: {residue_labels}. Using the first one ({residue_labels[0]})."
+                    )
+
                 mol_code = residue_labels[0]
-                if isinstance(polymer, Polypeptide):
-                    if mol_code in standard_amino_acids.values():
+
+                if isinstance(polymer, (Polypeptide, Polynucleotide)):
+                    if (
+                        isinstance(polymer, Polypeptide)
+                        and mol_code in standard_amino_acids.values()
+                    ):
                         monomer = Residue(
                             monomer_id=res_seq_id,
                             mol_code=mol_code,
@@ -158,7 +335,28 @@ def load_mmcif_file(
                             parent=polymer,
                         )
                         polymer.append(monomer)
-                    else:
+                    elif isinstance(polymer, Polynucleotide) and mol_code in [
+                        "U",
+                        "G",
+                        "C",
+                        "A",
+                        "DT",
+                        "DG",
+                        "DC",
+                        "DA",
+                        "DU",  # Added missing deoxyuridine
+                        "DI",  # Added deoxyinosine
+                    ]:
+                        monomer = Nucleotide(
+                            monomer_id=res_seq_id,
+                            mol_code=mol_code,
+                            insertion_code=i_code,
+                            is_hetero=False,
+                            parent=polymer,
+                        )
+                        polymer.append(monomer)
+
+                    else:  # It is a ligand associated to a polymer
                         monomer = Ligand(
                             monomer_id=res_seq_id,
                             mol_code=mol_code,
@@ -166,21 +364,13 @@ def load_mmcif_file(
                             is_hetero=True,
                             parent=polymer,
                         )
-                        polymer.ligands.append(monomer)
-                elif isinstance(polymer, Polynucleotide):
-                    monomer = Nucleotide(
-                        monomer_id=res_seq_id,
-                        mol_code=mol_code,
-                        insertion_code=i_code,
-                        is_hetero=False,
-                        parent=polymer,
-                    )
-                    if mol_code in ["U", "G", "C", "A", "DT", "DG", "DC", "DA"]:
-                        polymer.append(monomer)
-                    else:
-                        polymer.ligands.append(monomer)
+                        if isinstance(polymer, (Polypeptide, Polynucleotide)):
+                            polymer.ligands.append(monomer)  # type: ignore
+                        else:
+                            # Should not happen based on current logic, but included for completeness
+                            polymer.append(monomer)
 
-                else:
+                else:  # polymer is a LigandGroup
                     monomer = Ligand(
                         monomer_id=res_seq_id,
                         mol_code=mol_code,
@@ -189,16 +379,46 @@ def load_mmcif_file(
                         parent=polymer,
                     )
                     polymer.append(monomer)
+
                 for (_, atom_label), atom in residue.items():
                     atom.parent = monomer
                     monomer[atom_label] = atom
             assembly.append(polymer)
         ampal_container.append(assembly)
 
-    print(ampal_container)
-    print(ampal_container[0])
-    print(ampal_container[0]["E"])
-    print(len(list(ampal_container[0].get_atoms(ligands=True, inc_alt_states=True))))
+    return ampal_container
 
-    file.close()
+
+def load_mmcif_file(
+    file_path: pathlib.Path, is_gzipped: bool = False
+) -> AmpalContainer:
+    """Loads and parses an mmCIF file, returning an AmpalContainer.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the mmCIF file.
+    is_gzipped : bool, optional
+        Whether the file is gzipped, by default False.
+
+    Returns
+    -------
+    AmpalContainer
+        An AmpalContainer object representing the structure.
+
+    Raises
+    ------
+    ValueError
+        If the file format is invalid.
+    """
+    try:
+        with _open_mmcif_file(file_path, is_gzipped) as file:
+            column_labels, atom_lines = _parse_atom_site_records(file)
+            if not column_labels or not atom_lines:
+                raise ValueError("Invalid mmCIF file format: no atom data found.")
+            states = _extract_atom_data(atom_lines, column_labels)
+        ampal_container = _create_ampal_structure(states, file_path)
+    except Exception as e:
+        raise ValueError(f"Error processing mmCIF file {file_path}: {e}") from e
+
     return ampal_container
