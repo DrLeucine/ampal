@@ -1,18 +1,20 @@
 """Contains the base and common classes for all AMPAL objects."""
 
-from collections import OrderedDict
+from abc import ABC, abstractmethod
+import typing as t
 import itertools
+from collections import OrderedDict
 
 import numpy
 
 from .data import ELEMENT_DATA, PDB_ATOM_COLUMNS
-from .geometry import distance, Quaternion, centre_of_mass, rmsd
+from .geometry import Quaternion, centre_of_mass, distance, rmsd
 
 
-def cap(v, l):
+def cap(in_string, length):
     """Shortens string is above certain length."""
-    s = str(v)
-    return s if len(s) <= l else s[-l:]
+    s = str(in_string)
+    return s if len(s) <= length else s[-length:]
 
 
 def find_atoms_within_distance(atoms, cutoff_distance, point):
@@ -129,14 +131,192 @@ def write_pdb(residues, chain_id=" ", alt_states=False, strip_states=False):
     return "".join(out_pdb)
 
 
-class BaseAmpal(object):
+class Atom(object):
+    """Object containing atomic coordinates and element information.
+
+    Notes
+    -----
+    `Atom` is an AMPAL object, but it does not inherit from `BaseAmpal`.
+
+    Parameters
+    ----------
+    coordinates : 3D Vector (tuple, list, numpy.array)
+        Position of `Atom` in 3D space.
+    element : str
+        Element of `Atom`.
+    atom_id : str
+        Identifier for `Atom`, usually a number.
+    res_label : str, optional
+        Label used in `Monomer` to refer to the `Atom` type i.e. "CA" or "OD1".
+    occupancy : float, optional
+        The occupancy of the `Atom`.
+    bfactor : float, optional
+        The bfactor of the `Atom`.
+    charge : str, optional
+        The point charge of the `Atom`.
+    state : str
+        The state of this `Atom`. Used to identify `Atoms` with a
+        number of conformations.
+    parent : ampal.Monomer, optional
+       A reference to the `Monomer` containing this `Atom`.
+
+    Attributes
+    ----------
+    id : str
+        Identifier for `Atom`, usually a number.
+    res_label : str
+        Label used in `Monomer` to refer to the `Atom` type i.e. "CA" or "OD1".
+    element : str
+        Element of `Atom`.
+    parent : ampal.Monomer
+       A reference to the `Monomer` containing this `Atom`.
+        number of conformations.
+    tags : dict
+        A dictionary containing information about this AMPAL object.
+        The tags dictionary is used by AMPAL to cache information
+        about this object, but is also intended to be used by users
+        to store any relevant information they have.
+    """
+
+    def __init__(
+        self,
+        coordinates,
+        element,
+        atom_id=" ",
+        res_label=None,
+        occupancy=1.0,
+        bfactor=1.0,
+        charge=" ",
+        state="A",
+        parent=None,
+    ):
+        self._vector = numpy.array(coordinates)
+        self.id = atom_id
+        self.res_label = res_label
+        self.element = element
+        self.parent = parent
+        self.tags = {
+            "occupancy": occupancy,
+            "bfactor": bfactor,
+            "charge": charge,
+            "state": state,
+        }
+        self._ff_id = None
+
+    def __repr__(self):
+        return "<{} Atom{}. Coordinates: ({:.3f}, {:.3f}, {:.3f})>".format(
+            ELEMENT_DATA[self.element.title()]["name"],
+            "" if not self.res_label else " ({})".format(self.res_label),
+            self.x,
+            self.y,
+            self.z,
+        )
+
+    def __getitem__(self, item):
+        return self._vector[item]
+
+    def __setitem__(self, item, value):
+        self._vector[item] = value
+        return
+
+    def __sub__(self, other):
+        """Subtracts coordinates and returns a `numpy.array`.
+
+        Notes
+        -----
+        Objects themselves remain unchanged.
+        """
+        assert isinstance(other, Atom)
+        return self._vector - other._vector
+
+    def __add__(self, other):
+        """Adds coordinates and returns a `numpy.array`.
+
+        Notes
+        -----
+        Objects themselves remain unchanged.
+        """
+        assert isinstance(other, Atom)
+        return self._vector + other._vector
+
+    @property
+    def array(self):
+        """Converts the atomic coordinate to a `numpy.array`."""
+        return self._vector
+
+    @property
+    def x(self):
+        """The x coordinate."""
+        return self._vector[0]
+
+    @property
+    def y(self):
+        """The y coordinate."""
+        return self._vector[1]
+
+    @property
+    def z(self):
+        """The z coordinate."""
+        return self._vector[2]
+
+    @property
+    def unique_id(self):
+        """Creates a unique ID for the `Atom` based on its parents.
+
+        Returns
+        -------
+        unique_id : (str, str, str)
+            (polymer.id, residue.id, atom.id)
+        """
+        if self.parent:
+            chain = self.parent.parent.id
+            residue = self.parent.id
+            return chain, residue, self.id
+        else:
+            return None
+
+    def rotate(self, angle, axis, point=None, radians=False):
+        """Rotates `Atom` by `angle`.
+
+        Parameters
+        ----------
+        angle : float
+            Angle that `Atom` will be rotated.
+        axis : 3D Vector (tuple, list, numpy.array)
+            Axis about which the `Atom` will be rotated.
+        point : 3D Vector (tuple, list, numpy.array), optional
+            Point that the `axis` lies upon. If `None` then the origin is used.
+        radians : bool, optional
+            True is `angle` is define in radians, False is degrees.
+        """
+        q = Quaternion.angle_and_axis(angle=angle, axis=axis, radians=radians)
+        self._vector = q.rotate_vector(v=self._vector, point=point)
+        return
+
+    def translate(self, vector):
+        """Translates `Atom`.
+
+        Parameters
+        ----------
+        vector : 3D Vector (tuple, list, numpy.array)
+            Vector used for translation.
+        inc_alt_states : bool, optional
+            If true, will rotate atoms in all states i.e. includes
+            alternate conformations for side chains.
+        """
+        vector = numpy.array(vector)
+        self._vector += numpy.array(vector)
+        return
+
+
+class BaseAmpal(ABC):
     """Base class for all AMPAL objects except `ampal.atom`.
 
     Raises
     ------
     NotImplementedError
         `BaseAmpal` is an abstract base class and is not intended to
-        be instanciated. A `NotImplementedError` is raised if a
+        be instantiated. A `NotImplementedError` is raised if a
         method is called that is required on a child class but is
         not implemented in `BaseAmpal`.
     """
@@ -160,8 +340,8 @@ class BaseAmpal(object):
         centre_of_mass : numpy.array
             3D coordinate for the centre of mass.
         """
-        elts = set([x.element for x in self.get_atoms()])
-        masses_dict = {e: ELEMENT_DATA[e]["atomic mass"] for e in elts}
+        elements = set([x.element for x in self.get_atoms()])
+        masses_dict = {e: ELEMENT_DATA[e]["atomic mass"] for e in elements}
         points = [x._vector for x in self.get_atoms()]
         masses = [masses_dict[x.element] for x in self.get_atoms()]
         return centre_of_mass(points=points, masses=masses)
@@ -170,11 +350,13 @@ class BaseAmpal(object):
         """Returns all atoms in ampal object within `cut-off` distance from the `point`."""
         return find_atoms_within_distance(self.get_atoms(), cutoff_dist, point)
 
-    def get_atoms(self, ligands=True, inc_alt_states=False):
-        raise NotImplementedError
+    @abstractmethod
+    def get_atoms(self, ligands=True, inc_alt_states=False) -> t.Iterable[Atom]:
+        pass
 
-    def make_pdb(self):
-        raise NotImplementedError
+    @abstractmethod
+    def make_pdb(self) -> str:
+        pass
 
     def rotate(self, angle, axis, point=None, radians=False, inc_alt_states=True):
         """Rotates every atom in the AMPAL object.
@@ -191,7 +373,7 @@ class BaseAmpal(object):
             True is `angle` is define in radians, False is degrees.
         inc_alt_states : bool, optional
             If true, will rotate atoms in all states i.e. includes
-            alternate conformations for sidechains.
+            alternate conformations for side chains.
         """
         q = Quaternion.angle_and_axis(angle=angle, axis=axis, radians=radians)
         for atom in self.get_atoms(inc_alt_states=inc_alt_states):
@@ -207,14 +389,14 @@ class BaseAmpal(object):
             Vector used for translation.
         inc_alt_states : bool, optional
             If true, will rotate atoms in all states i.e. includes
-            alternate conformations for sidechains.
+            alternate conformations for side chains.
         """
         vector = numpy.array(vector)
         for atom in self.get_atoms(inc_alt_states=inc_alt_states):
             atom._vector += vector
         return
 
-    def rmsd(self, other, backbone=False):
+    def rmsd(self, other) -> float:
         """Calculates the RMSD between two AMPAL objects.
 
         Notes
@@ -226,16 +408,10 @@ class BaseAmpal(object):
         ----------
         other : AMPAL Object
             Any AMPAL object with `get_atoms` method.
-        backbone : bool, optional
-            Calculates RMSD of backbone only.
         """
         assert type(self) is type(other)
-        if backbone and hasattr(self, "backbone"):
-            points1 = self.backbone.get_atoms()
-            points2 = other.backbone.get_atoms()
-        else:
-            points1 = self.get_atoms()
-            points2 = other.get_atoms()
+        points1 = self.get_atoms()
+        points2 = other.get_atoms()
         points1 = [x._vector for x in points1]
         points2 = [x._vector for x in points2]
         return rmsd(points1=points1, points2=points2)
@@ -422,7 +598,7 @@ class Polymer(BaseAmpal):
         ------
         ValueError
             Raised if the number of labels does not match the number of
-            component Monoer objects.
+            component Monomer objects.
         """
         if labels:
             if len(self._monomers) == len(labels):
@@ -596,7 +772,7 @@ class Monomer(BaseAmpal):
         """
         return [self]
 
-    def get_atoms(self, inc_alt_states=False):
+    def get_atoms(self, ligands=False, inc_alt_states=False):
         """Returns all atoms in the `Monomer`.
 
         Parameters
@@ -637,184 +813,6 @@ class Monomer(BaseAmpal):
                 if res_atom.parent not in nearby_residues:
                     nearby_residues.append(res_atom.parent)
         return nearby_residues
-
-
-class Atom(object):
-    """Object containing atomic coordinates and element information.
-
-    Notes
-    -----
-    `Atom` is an AMPAL object, but it does not inherit from `BaseAmpal`.
-
-    Parameters
-    ----------
-    coordinates : 3D Vector (tuple, list, numpy.array)
-        Position of `Atom` in 3D space.
-    element : str
-        Element of `Atom`.
-    atom_id : str
-        Identifier for `Atom`, usually a number.
-    res_label : str, optional
-        Label used in `Monomer` to refer to the `Atom` type i.e. "CA" or "OD1".
-    occupancy : float, optional
-        The occupancy of the `Atom`.
-    bfactor : float, optional
-        The bfactor of the `Atom`.
-    charge : str, optional
-        The point charge of the `Atom`.
-    state : str
-        The state of this `Atom`. Used to identify `Atoms` with a
-        number of conformations.
-    parent : ampal.Monomer, optional
-       A reference to the `Monomer` containing this `Atom`.
-
-    Attributes
-    ----------
-    id : str
-        Identifier for `Atom`, usually a number.
-    res_label : str
-        Label used in `Monomer` to refer to the `Atom` type i.e. "CA" or "OD1".
-    element : str
-        Element of `Atom`.
-    parent : ampal.Monomer
-       A reference to the `Monomer` containing this `Atom`.
-        number of conformations.
-    tags : dict
-        A dictionary containing information about this AMPAL object.
-        The tags dictionary is used by AMPAL to cache information
-        about this object, but is also intended to be used by users
-        to store any relevant information they have.
-    """
-
-    def __init__(
-        self,
-        coordinates,
-        element,
-        atom_id=" ",
-        res_label=None,
-        occupancy=1.0,
-        bfactor=1.0,
-        charge=" ",
-        state="A",
-        parent=None,
-    ):
-        self._vector = numpy.array(coordinates)
-        self.id = atom_id
-        self.res_label = res_label
-        self.element = element
-        self.parent = parent
-        self.tags = {
-            "occupancy": occupancy,
-            "bfactor": bfactor,
-            "charge": charge,
-            "state": state,
-        }
-        self._ff_id = None
-
-    def __repr__(self):
-        return "<{} Atom{}. Coordinates: ({:.3f}, {:.3f}, {:.3f})>".format(
-            ELEMENT_DATA[self.element.title()]["name"],
-            "" if not self.res_label else " ({})".format(self.res_label),
-            self.x,
-            self.y,
-            self.z,
-        )
-
-    def __getitem__(self, item):
-        return self._vector[item]
-
-    def __setitem__(self, item, value):
-        self._vector[item] = value
-        return
-
-    def __sub__(self, other):
-        """Subtracts coordinates and returns a `numpy.array`.
-
-        Notes
-        -----
-        Objects themselves remain unchanged.
-        """
-        assert isinstance(other, Atom)
-        return self._vector - other._vector
-
-    def __add__(self, other):
-        """Adds coordinates and returns a `numpy.array`.
-
-        Notes
-        -----
-        Objects themselves remain unchanged.
-        """
-        assert isinstance(other, Atom)
-        return self._vector + other._vector
-
-    @property
-    def array(self):
-        """Converts the atomic coordinate to a `numpy.array`."""
-        return self._vector
-
-    @property
-    def x(self):
-        """The x coordinate."""
-        return self._vector[0]
-
-    @property
-    def y(self):
-        """The y coordinate."""
-        return self._vector[1]
-
-    @property
-    def z(self):
-        """The z coordinate."""
-        return self._vector[2]
-
-    @property
-    def unique_id(self):
-        """Creates a unique ID for the `Atom` based on its parents.
-
-        Returns
-        -------
-        unique_id : (str, str, str)
-            (polymer.id, residue.id, atom.id)
-        """
-        if self.parent:
-            chain = self.parent.parent.id
-            residue = self.parent.id
-            return chain, residue, self.id
-        else:
-            return None
-
-    def rotate(self, angle, axis, point=None, radians=False):
-        """Rotates `Atom` by `angle`.
-
-        Parameters
-        ----------
-        angle : float
-            Angle that `Atom` will be rotated.
-        axis : 3D Vector (tuple, list, numpy.array)
-            Axis about which the `Atom` will be rotated.
-        point : 3D Vector (tuple, list, numpy.array), optional
-            Point that the `axis` lies upon. If `None` then the origin is used.
-        radians : bool, optional
-            True is `angle` is define in radians, False is degrees.
-        """
-        q = Quaternion.angle_and_axis(angle=angle, axis=axis, radians=radians)
-        self._vector = q.rotate_vector(v=self._vector, point=point)
-        return
-
-    def translate(self, vector):
-        """Translates `Atom`.
-
-        Parameters
-        ----------
-        vector : 3D Vector (tuple, list, numpy.array)
-            Vector used for translation.
-        inc_alt_states : bool, optional
-            If true, will rotate atoms in all states i.e. includes
-            alternate conformations for sidechains.
-        """
-        vector = numpy.array(vector)
-        self._vector += numpy.array(vector)
-        return
 
 
 __author__ = "Christopher W. Wood, Kieran L. Hudson"
