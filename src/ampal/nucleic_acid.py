@@ -56,6 +56,17 @@ class Polynucleotide(Polymer):
             sl=sl,
         )
 
+    def __repr__(self):
+        if len(self.sequence) > 15:
+            seq = self.sequence[:12] + "..."
+        else:
+            seq = self.sequence
+        return "<Polynucleotide ({} {}), Seq: {}>".format(
+            len(self._monomers),
+            "Nucleotide" if len(self._monomers) == 1 else "Nucleotides",
+            seq,
+        )
+
     @property
     def sequence(self):
         """Returns the sequence of the `Polynucleotide` as a string.

@@ -228,7 +228,7 @@ class Polypeptide(Polymer):
             seq = self.sequence[:12] + "..."
         else:
             seq = self.sequence
-        return "<Polypeptide containing {} {}. Sequence: {}>".format(
+        return "<Polypeptide ({} {}), Seq: {}>".format(
             len(self._monomers),
             "Residue" if len(self._monomers) == 1 else "Residues",
             seq,

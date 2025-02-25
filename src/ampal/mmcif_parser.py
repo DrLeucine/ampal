@@ -1,8 +1,7 @@
-"""Contains code for parsing mmCIF files."""
-
 import gzip
 import pathlib
-from typing import Dict, List, Tuple, TextIO, Set, TypedDict
+from collections import OrderedDict
+from typing import Dict, List, Tuple, TextIO, Set, TypedDict, Union
 import warnings
 
 from ampal.base_ampal import Atom
@@ -13,7 +12,7 @@ from ampal.ligands import Ligand, LigandGroup
 from ampal.amino_acids import standard_amino_acids
 
 # Type aliases for improved readability and maintainability
-ChainDict = Dict[Tuple[str, str], Dict[Tuple[str, str], Atom]]
+ChainDict = Dict[Tuple[str, str], Dict[Tuple[str, str, str], Atom]]
 ChainComposition = Set[str]  # Contains 'P', 'N', or 'H'
 StateDict = Dict[str, Tuple[ChainDict, ChainComposition]]
 StatesDict = Dict[str, StateDict]
@@ -146,7 +145,7 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
                 "label_atom_id",
                 "label_alt_id",
                 "label_comp_id",
-                "label_asym_id",
+                "auth_asym_id",
                 "auth_seq_id",
                 "pdbx_PDB_ins_code",
                 "Cartn_x",
@@ -167,7 +166,7 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
         # Use .split() without arguments to handle variable whitespace
         atom_columns = atom_line.split()
         # Remove quotes if present, handle missing columns robustly
-        atom_columns = [col.replace('"', "").replace("'", "") for col in atom_columns]
+        atom_columns = [col.replace('"', "") for col in atom_columns]
 
         # Helper function to get values with default handling
         def get_value(key, default=""):
@@ -183,7 +182,7 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
             states[model_number] = {}
         state = states[model_number]
 
-        chain_id = get_value("label_asym_id")
+        chain_id = get_value("auth_asym_id")
         if chain_id not in state:
             state[chain_id] = ({}, set())
         chain, chain_composition = state[chain_id]
@@ -199,6 +198,8 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
 
         res_name = get_value("label_comp_id")
         res_label = get_value("label_atom_id")
+        alt_loc = get_value("label_alt_id", "")  # Get alt_loc, default to empty string
+        alt_loc = "A" if alt_loc in ["?", "."] else alt_loc
 
         # Handle coordinate extraction with error checking
         try:
@@ -238,7 +239,7 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
                 occupancy=occupancy,
                 bfactor=bfactor,
                 charge=charge,
-                state="",  # alt_loc is not currently used
+                state=alt_loc,  # Use alt_loc here
                 parent=None,
             )
         except ValueError as e:
@@ -247,12 +248,12 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
             )
             continue
 
-        if (res_name, res_label) in residue:
+        if (res_name, res_label, alt_loc) in residue:
             warnings.warn(
-                f"Atom label {(res_name, res_label)} is not unique, overwriting!"
+                f"Atom label {(res_name, res_label, alt_loc)} is not unique, overwriting! {atom_line}"
             )
 
-        residue[(res_name, res_label)] = atom
+        residue[(res_name, res_label, alt_loc)] = atom
         if record_type == "ATOM":
             if res_name in standard_amino_acids.values():
                 chain_composition.add("P")
@@ -276,7 +277,9 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
         elif record_type == "HETATM":
             chain_composition.add("H")
         else:
-            # treat unknown record type as hetero atom
+            warnings.warn(
+                f"Unknown record type: {record_type}.  Treating as hetero atom."
+            )
             chain_composition.add("H")
 
     return states
@@ -301,7 +304,7 @@ def _create_ampal_structure(
     """
     ampal_container = AmpalContainer(id=str(file_path.stem))
     for state_id, state in states.items():
-        assembly = Assembly(assembly_id=state_id)
+        assembly = Assembly(assembly_id=f"{str(file_path.stem)}_{state_id}")
         for chain_id, (chain, chain_composition) in state.items():
             if "P" in chain_composition:
                 polymer = Polypeptide(polymer_id=chain_id, parent=assembly)
@@ -344,8 +347,8 @@ def _create_ampal_structure(
                         "DG",
                         "DC",
                         "DA",
-                        "DU",  # Added missing deoxyuridine
-                        "DI",  # Added deoxyinosine
+                        "DU",
+                        "DI",
                     ]:
                         monomer = Nucleotide(
                             monomer_id=res_seq_id,
@@ -380,24 +383,61 @@ def _create_ampal_structure(
                     )
                     polymer.append(monomer)
 
-                for (_, atom_label), atom in residue.items():
-                    atom.parent = monomer
-                    monomer[atom_label] = atom
-            assembly.append(polymer)
+                monomer.states = gen_states(list(residue.items()))
+            assembly._molecules.append(polymer)
         ampal_container.append(assembly)
 
     return ampal_container
 
 
+def gen_states(atoms: List[Tuple[Tuple[str, str, str], Atom]]) -> OrderedDict:
+    """Generates the `states` dictionary for a `Monomer`.
+
+    atoms : [Atom]
+        A list of atom data parsed from the input PDB.
+    """
+    states = OrderedDict()
+    for (_, atom_label, a_state_label), atom in atoms:
+        state_label = "A" if not a_state_label else a_state_label
+        if state_label not in states:
+            states[state_label] = OrderedDict()
+        states[state_label][atom_label] = atom
+
+    # This code is to check if there are alternate states and populate any
+    # both states with the full complement of atoms
+    states_len = [(k, len(x)) for k, x in states.items()]
+    if (len(states) > 1) and (len(set([x[1] for x in states_len])) > 1):
+        for t_state, t_state_d in states.items():
+            new_s_dict = OrderedDict()
+            for k, v in states[sorted(states_len, key=lambda x: x[0])[0][0]].items():
+                if k not in t_state_d:
+                    c_atom = Atom(
+                        v._vector,
+                        v.element,
+                        atom_id=v.id,
+                        res_label=v.res_label,
+                        occupancy=v.tags["occupancy"],
+                        bfactor=v.tags["bfactor"],
+                        charge=v.tags["charge"],
+                        state=t_state[0],
+                        parent=v.parent,
+                    )
+                    new_s_dict[k] = c_atom
+                else:
+                    new_s_dict[k] = t_state_d[k]
+            states[t_state] = new_s_dict
+    return states
+
+
 def load_mmcif_file(
-    file_path: pathlib.Path, is_gzipped: bool = False
+    file_path: Union[str, pathlib.Path], is_gzipped: bool = False
 ) -> AmpalContainer:
     """Loads and parses an mmCIF file, returning an AmpalContainer.
 
     Parameters
     ----------
-    file_path : pathlib.Path
-        Path to the mmCIF file.
+    file_path : Union[str, pathlib.Path]
+        Path to the mmCIF file, either as a string or a pathlib.Path object.
     is_gzipped : bool, optional
         Whether the file is gzipped, by default False.
 
@@ -410,15 +450,27 @@ def load_mmcif_file(
     ------
     ValueError
         If the file format is invalid.
+    TypeError
+        If file_path is not a string or pathlib.Path.
     """
+    if isinstance(file_path, str):
+        file_path_obj = pathlib.Path(file_path)
+    elif isinstance(file_path, pathlib.Path):
+        file_path_obj = file_path
+    else:
+        raise TypeError("file_path must be a string or pathlib.Path object")
+
     try:
-        with _open_mmcif_file(file_path, is_gzipped) as file:
+        with _open_mmcif_file(file_path_obj, is_gzipped) as file:
             column_labels, atom_lines = _parse_atom_site_records(file)
             if not column_labels or not atom_lines:
                 raise ValueError("Invalid mmCIF file format: no atom data found.")
             states = _extract_atom_data(atom_lines, column_labels)
-        ampal_container = _create_ampal_structure(states, file_path)
+        ampal_container = _create_ampal_structure(states, file_path_obj)
     except Exception as e:
-        raise ValueError(f"Error processing mmCIF file {file_path}: {e}") from e
+        raise ValueError(f"Error processing mmCIF file {file_path_obj}: {e}") from e
 
     return ampal_container
+
+
+__author__ = "Christopher W. Wood"
