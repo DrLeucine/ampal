@@ -51,6 +51,11 @@ complex selections and performing analysis. Take a look at the
 
 ## Release Notes
 
+## v2.1.0
+* Adds `load_mmcif_file` function
+* Adds more typing information
+* Tidies up `__repr__` strings
+
 ## v2.0.0
 * Breaking change: removes `find_aa_info` function and tests, which enables us to
   remove the requests dependency. This kind of functionality is better handled by the
