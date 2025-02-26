@@ -1,6 +1,7 @@
 """Defines various containers for AMPAL objects."""
 
 from collections import Counter
+import typing as t
 import itertools
 
 from ampal.base_ampal import BaseAmpal, Polymer, find_atoms_within_distance
@@ -38,9 +39,9 @@ class AmpalContainer(object):
     def __init__(self, ampal_objects=None, id=None):
         self.id = "AMPAL Container" if not id else id
         if ampal_objects:
-            self._ampal_objects = ampal_objects
+            self._ampal_objects: t.List[Assembly] = ampal_objects
         else:
-            self._ampal_objects = []
+            self._ampal_objects: t.List[Assembly] = []
 
     def __add__(self, other):
         """Merges two `AmpalContainers`.

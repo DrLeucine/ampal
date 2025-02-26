@@ -13,7 +13,7 @@ classifiers = [
     "Natural Language :: English",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
     "cython",
     "networkx",
@@ -30,6 +30,7 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "hypothesis",
+    "ipython>=7.34.0",
     "pytest",
 ]
 

@@ -228,7 +228,7 @@ class PdbParser(object):
         Notes
         -----
         Will create an `Assembly` if there is a single state in the
-        parese tree or an `AmpalContainer` if there is more than one.
+        parse tree or an `AmpalContainer` if there is more than one.
         """
         data = self.pdb_parse_tree["data"]
         if len(data) > 1:
@@ -313,10 +313,10 @@ class PdbParser(object):
             elif res_info[0] == "HETATM":
                 mon_cls = None
                 on_chain = False
-                for filt_func in hetatom_filters.values():
-                    filt_res = filt_func(residue)
-                    if filt_res:
-                        mon_cls, on_chain = filt_res
+                for filter_func in hetatom_filters.values():
+                    filter_res = filter_func(residue)
+                    if filter_res:
+                        mon_cls, on_chain = filter_res
                         break
                     mon_cls = Ligand
                 if on_chain:
@@ -347,8 +347,9 @@ class PdbParser(object):
         monomer_labels, monomer_data = monomer_info
         if len(monomer_labels) > 1:
             raise ValueError(
-                "Malformed PDB, single monomer id with "
-                "multiple labels. {}".format(monomer_labels)
+                "Malformed PDB, single monomer id with " "multiple labels. {}".format(
+                    monomer_labels
+                )
             )
         else:
             monomer_label = list(monomer_labels)[0]
