@@ -4,7 +4,7 @@ from collections import OrderedDict
 from typing import Dict, List, Tuple, TextIO, Set, TypedDict, Union
 import warnings
 
-from ampal.base_ampal import Atom
+from ampal.base_ampal import Atom, Monomer
 from ampal.assembly import AmpalContainer, Assembly
 from ampal.protein import Polypeptide, Residue
 from ampal.nucleic_acid import Polynucleotide, Nucleotide
@@ -240,7 +240,6 @@ def _extract_atom_data(atom_lines: List[str], column_labels: List[str]) -> State
                 bfactor=bfactor,
                 charge=charge,
                 state=alt_loc,  # Use alt_loc here
-                parent=None,
             )
         except ValueError as e:
             warnings.warn(
@@ -383,14 +382,14 @@ def _create_ampal_structure(
                     )
                     polymer.append(monomer)
 
-                monomer.states = gen_states(list(residue.items()))
+                monomer.states = gen_states(list(residue.items()), parent=monomer)
             assembly._molecules.append(polymer)
         ampal_container.append(assembly)
 
     return ampal_container
 
 
-def gen_states(atoms: List[Tuple[Tuple[str, str, str], Atom]]) -> OrderedDict:
+def gen_states(atoms: List[Tuple[Tuple[str, str, str], Atom]], parent: Monomer) -> OrderedDict:
     """Generates the `states` dictionary for a `Monomer`.
 
     atoms : [Atom]
@@ -401,6 +400,7 @@ def gen_states(atoms: List[Tuple[Tuple[str, str, str], Atom]]) -> OrderedDict:
         state_label = "A" if not a_state_label else a_state_label
         if state_label not in states:
             states[state_label] = OrderedDict()
+        atom.parent = parent
         states[state_label][atom_label] = atom
 
     # This code is to check if there are alternate states and populate any
